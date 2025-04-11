@@ -14,9 +14,8 @@ import { DifficultySelector } from "./DifficultySelector";
 import { Palette } from "./Palette";
 import { PromptInput } from "./PromptInput";
 
-// Canvas dimensions - increased for better detail and to match coloring book style
-const CANVAS_WIDTH = 128;
-const CANVAS_HEIGHT = 128;
+// Canvas dimensions - these should match the actual template dimensions
+// We'll set these dynamically based on the generated image
 
 export function ColorByNumberApp() {
   // State for the image generation
@@ -37,11 +36,13 @@ export function ColorByNumberApp() {
   );
   const [showTemplate, setShowTemplate] = useState(true);
 
+  // State for canvas dimensions
+  const [canvasWidth, setCanvasWidth] = useState<number>(128); // Default starting size
+  const [canvasHeight, setCanvasHeight] = useState<number>(128); // Default starting size
+
   // State for tracking colored pixels
   const [coloredPixels, setColoredPixels] = useState<boolean[][]>(
-    Array.from({ length: CANVAS_HEIGHT }, () =>
-      Array.from({ length: CANVAS_WIDTH }, () => false)
-    )
+    Array.from({ length: 128 }, () => Array.from({ length: 128 }, () => false))
   );
   const [colorProgress, setColorProgress] = useState<number[]>([]);
 
@@ -51,15 +52,15 @@ export function ColorByNumberApp() {
 
     // Create a 2D array to track colored pixels if not already initialized
     setColoredPixels((prev) => {
-      if (prev.length === CANVAS_HEIGHT && prev[0]?.length === CANVAS_WIDTH) {
+      if (prev.length === canvasHeight && prev[0]?.length === canvasWidth) {
         // Already initialized with correct dimensions, just reset all values to false
-        return Array.from({ length: CANVAS_HEIGHT }, () =>
-          Array.from({ length: CANVAS_WIDTH }, () => false)
+        return Array.from({ length: canvasHeight }, () =>
+          Array.from({ length: canvasWidth }, () => false)
         );
       } else {
         // Initialize with correct dimensions
-        return Array.from({ length: CANVAS_HEIGHT }, () =>
-          Array.from({ length: CANVAS_WIDTH }, () => false)
+        return Array.from({ length: canvasHeight }, () =>
+          Array.from({ length: canvasWidth }, () => false)
         );
       }
     });
@@ -113,6 +114,10 @@ export function ColorByNumberApp() {
         );
         console.log("Template sample:", template[0][0]);
 
+        // Update canvas dimensions based on the template
+        setCanvasWidth(simplifiedImageData.width);
+        setCanvasHeight(simplifiedImageData.height);
+
         setNumberedTemplate(template);
       }
     } catch (error) {
@@ -133,7 +138,7 @@ export function ColorByNumberApp() {
       if (!prev[y]) {
         newColoredPixels = [...prev];
         // Initialize the row if it doesn't exist
-        newColoredPixels[y] = Array.from({ length: CANVAS_WIDTH }, () => false);
+        newColoredPixels[y] = Array.from({ length: canvasWidth }, () => false);
       } else {
         newColoredPixels = [...prev];
       }
@@ -157,13 +162,15 @@ export function ColorByNumberApp() {
     const coloredCount = Array.from({ length: palette.length }, () => 0);
 
     // Count total and colored pixels for each color
-    for (let y = 0; y < CANVAS_HEIGHT; y++) {
-      for (let x = 0; x < CANVAS_WIDTH; x++) {
-        const colorNumber = numberedTemplate[y][x].number;
-        totalPixels[colorNumber - 1]++;
+    for (let y = 0; y < canvasHeight; y++) {
+      for (let x = 0; x < canvasWidth; x++) {
+        if (y < numberedTemplate.length && x < numberedTemplate[0].length) {
+          const colorNumber = numberedTemplate[y][x].number;
+          totalPixels[colorNumber - 1]++;
 
-        if (pixels[y][x]) {
-          coloredCount[colorNumber - 1]++;
+          if (pixels[y] && pixels[y][x]) {
+            coloredCount[colorNumber - 1]++;
+          }
         }
       }
     }
@@ -182,8 +189,8 @@ export function ColorByNumberApp() {
     if (!numberedTemplate) return;
 
     // Reset colored pixels
-    const newColoredPixels = Array.from({ length: CANVAS_HEIGHT }, () =>
-      Array.from({ length: CANVAS_WIDTH }, () => false)
+    const newColoredPixels = Array.from({ length: canvasHeight }, () =>
+      Array.from({ length: canvasWidth }, () => false)
     );
 
     setColoredPixels(newColoredPixels);
@@ -202,9 +209,11 @@ export function ColorByNumberApp() {
     if (!numberedTemplate || selectedColorNumber === null) return;
 
     // Find an uncolored pixel with the selected color
-    for (let y = 0; y < CANVAS_HEIGHT; y++) {
-      for (let x = 0; x < CANVAS_WIDTH; x++) {
+    for (let y = 0; y < canvasHeight; y++) {
+      for (let x = 0; x < canvasWidth; x++) {
         if (
+          y < numberedTemplate.length &&
+          x < numberedTemplate[0].length &&
           numberedTemplate[y][x].number === selectedColorNumber &&
           (!coloredPixels[y] || !coloredPixels[y][x])
         ) {
@@ -227,23 +236,25 @@ export function ColorByNumberApp() {
 
     if (!ctx) return;
 
-    canvas.width = CANVAS_WIDTH;
-    canvas.height = CANVAS_HEIGHT;
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
 
     // Draw the colored image
-    for (let y = 0; y < CANVAS_HEIGHT; y++) {
-      for (let x = 0; x < CANVAS_WIDTH; x++) {
-        const pixel = numberedTemplate[y][x];
+    for (let y = 0; y < canvasHeight; y++) {
+      for (let x = 0; x < canvasWidth; x++) {
+        if (y < numberedTemplate.length && x < numberedTemplate[0].length) {
+          const pixel = numberedTemplate[y][x];
 
-        if (coloredPixels[y] && coloredPixels[y][x]) {
-          // Draw colored pixel
-          ctx.fillStyle = `rgb(${pixel.color.r}, ${pixel.color.g}, ${pixel.color.b})`;
-        } else {
-          // Draw white pixel
-          ctx.fillStyle = "white";
+          if (coloredPixels[y] && coloredPixels[y][x]) {
+            // Draw colored pixel
+            ctx.fillStyle = `rgb(${pixel.color.r}, ${pixel.color.g}, ${pixel.color.b})`;
+          } else {
+            // Draw white pixel
+            ctx.fillStyle = "white";
+          }
+
+          ctx.fillRect(x, y, 1, 1);
         }
-
-        ctx.fillRect(x, y, 1, 1);
       }
     }
 
@@ -285,6 +296,10 @@ export function ColorByNumberApp() {
 
       // Create the numbered template
       const template = createNumberedTemplate(simplifiedImageData, newPalette);
+
+      // Update canvas dimensions based on the template
+      setCanvasWidth(simplifiedImageData.width);
+      setCanvasHeight(simplifiedImageData.height);
 
       setNumberedTemplate(template);
     } catch (error) {
@@ -335,8 +350,8 @@ export function ColorByNumberApp() {
               </div>
               <Canvas
                 numberedTemplate={numberedTemplate}
-                width={CANVAS_WIDTH}
-                height={CANVAS_HEIGHT}
+                width={canvasWidth}
+                height={canvasHeight}
                 selectedColorNumber={selectedColorNumber}
                 palette={palette}
                 onPixelColored={handlePixelColored}

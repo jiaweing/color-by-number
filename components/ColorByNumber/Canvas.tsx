@@ -138,10 +138,24 @@ export function Canvas({
   const [isDrawing, setIsDrawing] = useState(false);
 
   // State for pan and zoom
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(3); // Start with a larger scale to see the image better
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // Calculate a better initial scale when the component mounts
+  useEffect(() => {
+    if (canvasRef.current && width && height) {
+      const canvas = canvasRef.current;
+      const displayWidth = canvas.clientWidth;
+      const displayHeight = canvas.clientHeight;
+
+      // Set an initial scale that fits the image nicely in the canvas
+      const initialScale =
+        Math.min(displayWidth / width, displayHeight / height) * 0.8;
+      setScale(Math.max(initialScale, 3)); // Use at least 3x scale for visibility
+    }
+  }, [width, height]);
 
   // Function to draw the canvas
   const drawCanvas = useCallback(() => {
@@ -164,7 +178,10 @@ export function Canvas({
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, displayWidth, displayHeight);
 
-    if (!numberedTemplate) return;
+    if (!numberedTemplate) {
+      console.log("No template data available");
+      return;
+    }
 
     console.log("Drawing template with dimensions:", width, height);
     console.log("Template data sample:", numberedTemplate[0][0]);
@@ -176,31 +193,22 @@ export function Canvas({
     const centerX = displayWidth / 2;
     const centerY = displayHeight / 2;
 
+    // Calculate a better initial scale to fit the image in the canvas
+    const initialScale =
+      Math.min(displayWidth / width, displayHeight / height) * 0.8;
+
     // Apply transformations: translate to center, apply scale, apply offset, translate back
-    // Simplify transformations for debugging
     ctx.translate(centerX, centerY);
     ctx.scale(scale, scale);
     ctx.translate(offset.x, offset.y);
     ctx.translate(-width / 2, -height / 2);
 
-    // Draw a reference point at the origin (0,0) after transformations
-    ctx.fillStyle = "black";
-    ctx.beginPath();
-    ctx.arc(0, 0, 5, 0, Math.PI * 2);
-    ctx.fill();
+    // Log transformation values for debugging
+    console.log(
+      `Canvas transformations: scale=${scale}, offset=(${offset.x}, ${offset.y}), centerX=${centerX}, centerY=${centerY}, width=${width}, height=${height}`
+    );
 
-    // Draw coordinate axes
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-50, 0);
-    ctx.lineTo(width + 50, 0);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(0, -50);
-    ctx.lineTo(0, height + 50);
-    ctx.stroke();
+    // Remove debug reference point and coordinate axes for production
 
     // First pass: Fill all regions with their base colors
     try {
@@ -209,6 +217,19 @@ export function Canvas({
       // Draw the actual template
       if (numberedTemplate) {
         console.log("Drawing the numbered template");
+        console.log(
+          `Template dimensions: ${numberedTemplate.length}x${numberedTemplate[0].length}`
+        );
+        console.log(
+          `First few pixels: ${JSON.stringify(
+            numberedTemplate[0][0]
+          )}, ${JSON.stringify(numberedTemplate[0][1])}`
+        );
+        console.log(
+          `ColoredPixels array dimensions: ${coloredPixels.length}x${
+            coloredPixels[0]?.length || 0
+          }`
+        );
 
         // Draw each pixel with its color
         for (let y = 0; y < height; y++) {
@@ -219,6 +240,9 @@ export function Canvas({
               // Get the color number for this pixel
               const colorNumber = pixel.number;
 
+              // Get the actual color for this pixel
+              const actualColor = pixel.color;
+
               if (coloredPixels[y] && coloredPixels[y][x]) {
                 // If the pixel is colored by the user, use the color from the palette
                 if (palette && palette[colorNumber - 1]) {
@@ -226,9 +250,20 @@ export function Canvas({
                   ctx.fillRect(x, y, 1, 1);
                 }
               } else {
-                // Otherwise, fill with a light gray base color
-                ctx.fillStyle = "#f0f0f0";
+                // Otherwise, fill with the actual color but with reduced opacity
+                // This makes the uncolored regions visible but distinguishable from colored ones
+                const r = actualColor.r;
+                const g = actualColor.g;
+                const b = actualColor.b;
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
                 ctx.fillRect(x, y, 1, 1);
+
+                // Log a sample of pixels being drawn (only first few to avoid console spam)
+                if (y < 2 && x < 2) {
+                  console.log(
+                    `Drawing pixel at (${x},${y}) with color rgba(${r},${g},${b},0.3)`
+                  );
+                }
               }
             } catch (err) {
               console.error(`Error drawing template pixel at ${x},${y}:`, err);
@@ -248,8 +283,8 @@ export function Canvas({
         console.log("Drawing region outlines and numbers");
 
         // Draw grid lines
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
-        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
+        ctx.lineWidth = 0.2;
 
         // Draw vertical grid lines
         for (let x = 0; x <= width; x++) {
@@ -268,8 +303,8 @@ export function Canvas({
         }
 
         // Draw region outlines
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = "rgba(0, 0, 0, 1)";
+        ctx.lineWidth = 1.0;
 
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
@@ -333,7 +368,7 @@ export function Canvas({
 
         // Draw numbers at region centers
         ctx.fillStyle = "black";
-        ctx.font = "8px Arial";
+        ctx.font = "bold 8px Arial";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
@@ -342,17 +377,33 @@ export function Canvas({
           let isRegionColored = true;
           const number = center.number;
 
-          // Check if any pixel with this number is not colored
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              if (numberedTemplate[y][x].number === number) {
+          // Sample a few pixels around the center to check if the region is colored
+          const sampleRadius = 3;
+          for (
+            let dy = -sampleRadius;
+            dy <= sampleRadius && isRegionColored;
+            dy++
+          ) {
+            for (
+              let dx = -sampleRadius;
+              dx <= sampleRadius && isRegionColored;
+              dx++
+            ) {
+              const x = center.x + dx;
+              const y = center.y + dy;
+
+              if (
+                x >= 0 &&
+                x < width &&
+                y >= 0 &&
+                y < height &&
+                numberedTemplate[y][x].number === number
+              ) {
                 if (!coloredPixels[y] || !coloredPixels[y][x]) {
                   isRegionColored = false;
-                  break;
                 }
               }
             }
-            if (!isRegionColored) break;
           }
 
           // Draw the number if the region isn't completely colored
@@ -481,10 +532,18 @@ export function Canvas({
     const targetNumber = numberedTemplate[y][x].number;
 
     // Only proceed if the clicked pixel has the selected color number
-    if (targetNumber !== selectedColorNumber) return;
+    if (targetNumber !== selectedColorNumber) {
+      console.log(
+        `Clicked on region ${targetNumber} but selected color is ${selectedColorNumber}`
+      );
+      return;
+    }
 
     // If the pixel is already colored, do nothing
-    if (coloredPixels[y] && coloredPixels[y][x]) return;
+    if (coloredPixels[y] && coloredPixels[y][x]) {
+      console.log(`Pixel at (${x}, ${y}) is already colored`);
+      return;
+    }
 
     console.log(`Coloring region with number ${targetNumber} at (${x}, ${y})`);
 
@@ -600,7 +659,18 @@ export function Canvas({
           className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md"
           onClick={() => {
             console.log("Resetting view");
-            setScale(1);
+            // Reset to a better scale that fits the image
+            if (canvasRef.current && width && height) {
+              const canvas = canvasRef.current;
+              const displayWidth = canvas.clientWidth;
+              const displayHeight = canvas.clientHeight;
+
+              const initialScale =
+                Math.min(displayWidth / width, displayHeight / height) * 0.8;
+              setScale(Math.max(initialScale, 3)); // Use at least 3x scale for visibility
+            } else {
+              setScale(3); // Default fallback
+            }
             setOffset({ x: 0, y: 0 });
           }}
         >

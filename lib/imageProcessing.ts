@@ -267,6 +267,31 @@ function enhanceRegionBoundaries(
   // Create a map to track region numbers
   const regionMap: number[][] = [];
 
+  // Identify the background color (usually the most common color)
+  // We'll assume it's close to white
+  let backgroundColorIndex = -1;
+  for (let i = 0; i < palette.length; i++) {
+    const color = palette[i];
+    // Check if this color is close to white
+    if (color.r > 240 && color.g > 240 && color.b > 240) {
+      backgroundColorIndex = i;
+      break;
+    }
+  }
+
+  // If no white-ish color found, use the brightest color as background
+  if (backgroundColorIndex === -1) {
+    let maxBrightness = -1;
+    for (let i = 0; i < palette.length; i++) {
+      const color = palette[i];
+      const brightness = color.r + color.g + color.b;
+      if (brightness > maxBrightness) {
+        maxBrightness = brightness;
+        backgroundColorIndex = i;
+      }
+    }
+  }
+
   // First, map each pixel to its closest palette color index
   for (let y = 0; y < height; y++) {
     regionMap[y] = [];
@@ -303,20 +328,50 @@ function enhanceRegionBoundaries(
       const index = (y * width + x) * 4;
       const currentRegion = smoothedMap[y][x];
 
-      // Check if this pixel is at the edge of a region
-      const isEdge = isPixelAtRegionEdge(x, y, smoothedMap, width, height);
+      // Check if this is a background pixel
+      const isBackground = currentRegion === backgroundColorIndex;
 
-      if (isEdge) {
-        // Mark edge pixels with black
-        enhancedData.data[index] = 0; // R
-        enhancedData.data[index + 1] = 0; // G
-        enhancedData.data[index + 2] = 0; // B
+      // For background pixels, we'll only draw edges when they border non-background regions
+      // This prevents the spotted pattern in the background
+      if (isBackground) {
+        // Check if this background pixel borders a non-background region
+        const bordersNonBackground = isBackgroundPixelBorderingContent(
+          x,
+          y,
+          smoothedMap,
+          width,
+          height,
+          backgroundColorIndex
+        );
+
+        if (bordersNonBackground) {
+          // This is an edge of the content, draw it black
+          enhancedData.data[index] = 0; // R
+          enhancedData.data[index + 1] = 0; // G
+          enhancedData.data[index + 2] = 0; // B
+        } else {
+          // This is just background, make it pure white
+          enhancedData.data[index] = 255; // R
+          enhancedData.data[index + 1] = 255; // G
+          enhancedData.data[index + 2] = 255; // B
+        }
       } else {
-        // Set non-edge pixels to their palette color
-        const paletteColor = palette[currentRegion];
-        enhancedData.data[index] = paletteColor.r; // R
-        enhancedData.data[index + 1] = paletteColor.g; // G
-        enhancedData.data[index + 2] = paletteColor.b; // B
+        // This is content (non-background)
+        // Check if this pixel is at the edge of a region
+        const isEdge = isPixelAtRegionEdge(x, y, smoothedMap, width, height);
+
+        if (isEdge) {
+          // Mark edge pixels with black
+          enhancedData.data[index] = 0; // R
+          enhancedData.data[index + 1] = 0; // G
+          enhancedData.data[index + 2] = 0; // B
+        } else {
+          // Set non-edge pixels to their palette color
+          const paletteColor = palette[currentRegion];
+          enhancedData.data[index] = paletteColor.r; // R
+          enhancedData.data[index + 1] = paletteColor.g; // G
+          enhancedData.data[index + 2] = paletteColor.b; // B
+        }
       }
     }
   }
@@ -404,6 +459,46 @@ function isPixelAtRegionEdge(
     ) {
       // If any neighbor has a different region, this is an edge
       if (regionMap[neighbor.y][neighbor.x] !== currentRegion) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a background pixel borders any non-background content
+ */
+function isBackgroundPixelBorderingContent(
+  x: number,
+  y: number,
+  regionMap: number[][],
+  width: number,
+  height: number,
+  backgroundColorIndex: number
+): boolean {
+  // Check neighboring pixels (8-connectivity for better edge detection)
+  const neighbors = [
+    { x: x, y: y - 1 }, // up
+    { x: x, y: y + 1 }, // down
+    { x: x - 1, y: y }, // left
+    { x: x + 1, y: y }, // right
+    { x: x - 1, y: y - 1 }, // top-left
+    { x: x + 1, y: y - 1 }, // top-right
+    { x: x - 1, y: y + 1 }, // bottom-left
+    { x: x + 1, y: y + 1 }, // bottom-right
+  ];
+
+  for (const neighbor of neighbors) {
+    if (
+      neighbor.x >= 0 &&
+      neighbor.x < width &&
+      neighbor.y >= 0 &&
+      neighbor.y < height
+    ) {
+      // If any neighbor is not background, this background pixel borders content
+      if (regionMap[neighbor.y][neighbor.x] !== backgroundColorIndex) {
         return true;
       }
     }
